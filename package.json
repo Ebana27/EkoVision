@@ -1,0 +1,28 @@
+{
+  "name": "ekovision",
+  "version": "1.0.0",
+  "description": "EkoVision est un logiciel de partage d'écran P2P sur réseau local.",
+  "main": "./src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --check src/main/main.js && node --check src/preload/preload.js && node --check src/renderer/prof/prof.js && node --check src/renderer/eleve/eleve.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ebana27/EkoVision.git"
+  },
+  "keywords": ["ekovision", "education", "lan", "peer-to-peer", "screen-sharing"],
+  "author": "Plamedi Ebana",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/Ebana27/EkoVision/issues"
+  },
+  "homepage": "https://github.com/Ebana27/EkoVision#readme",
+  "devDependencies": {
+    "electron": "^45.2.3"
+  },
+  "dependencies": {
+    "peer": "^1.0.2",
+    "peerjs": "^1.5.5"
+  }
+}
