@@ -1,0 +1,48 @@
+:root{--ink:#1a1f1c;--muted:#7a847e;--line:#e6eae8;--green:#2fa584;--green-dark:#1f7f65;font-family:Inter,"Segoe UI",system-ui,sans-serif}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:#fff;color:var(--ink);font-size:14px;line-height:1.5}
+a{color:inherit;text-decoration:none}
+button,input{font:inherit}
+h1{font-size:26px;font-weight:650;letter-spacing:-.02em;margin:28px 0 20px}
+
+.page{max-width:1100px;min-height:100vh;margin:0 auto;padding:24px 32px}
+.header{display:flex;align-items:center;gap:12px;padding-bottom:18px;border-bottom:1px solid var(--line)}
+.header img{width:32px;height:32px;object-fit:contain}
+.header strong{letter-spacing:.06em}
+.header .mode{color:var(--muted);font-size:12px}
+.header .retour{margin-left:auto;color:var(--muted)}
+.header .retour:hover{color:var(--green-dark)}
+
+.btn{height:40px;padding:0 18px;border:1px solid var(--green);border-radius:6px;background:var(--green);color:#fff;font-weight:600;cursor:pointer}
+.btn:hover{background:var(--green-dark)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.clair{background:#fff;color:var(--ink);border-color:var(--line)}
+.btn.clair:hover{background:#f6f8f7}
+
+.etat{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px}
+.etat i{width:8px;height:8px;border-radius:50%;background:#b5bdb8}
+.etat.ok i{background:#2fa584}
+.etat.erreur i{background:#c44}
+.etat.erreur{color:#c44}
+
+.carte{border:1px solid var(--line);border-radius:8px;padding:18px;margin-bottom:16px}
+.carte h2{font-size:15px;font-weight:650;margin:0 0 14px}
+.ecran{position:relative;aspect-ratio:16/9;background:#f4f6f5;border-radius:8px;overflow:hidden;display:grid;place-items:center}
+.ecran video{width:100%;height:100%;object-fit:contain}
+.ecran:fullscreen{background:#000;border-radius:0}
+.vide{position:absolute;margin:0;color:var(--muted)}
+.aucun{margin:0;color:var(--muted);font-size:13px}
+
+.accueil .titre{text-align:center;margin:80px 0 48px}
+.accueil .titre h1{font-size:44px;margin:0 0 10px}
+.accueil .titre p{margin:0;color:var(--muted);font-size:16px}
+.choix{display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:640px;margin:0 auto}
+.choix a{border:1px solid var(--line);border-radius:10px;padding:36px 24px;text-align:center;transition:border-color .15s}
+.choix a:hover{border-color:var(--green)}
+.choix h2{font-size:20px;margin:0 0 4px}
+.choix p{margin:0;color:var(--muted)}
+
+@media(max-width:600px){.page{padding:16px}.choix{grid-template-columns:1fr}.accueil .titre h1{font-size:32px}}
+
+.pied{margin-top:64px;text-align:center;color:var(--muted);font-size:12px}

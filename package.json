@@ -1,11 +1,21 @@
 {
   "name": "ekovision",
-  "version": "1.0.0",
+  "productName": "EkoVision",
+  "version": "1.1.0",
   "description": "EkoVision est un logiciel de partage d'écran P2P sur réseau local.",
   "main": "./src/main/main.js",
   "scripts": {
     "start": "electron .",
-    "test": "node --check src/main/main.js && node --check src/preload/preload.js && node --check src/renderer/prof/prof.js && node --check src/renderer/eleve/eleve.js"
+    "test": "node --check src/main/main.js && node --check src/preload/preload.js && node --check src/renderer/outils.js && node --check src/renderer/splash.js && node --check src/renderer/prof/prof.js && node --check src/renderer/eleve/eleve.js",
+    "pack": "electron-builder --dir",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
+    "build:linux": "electron-builder --linux",
+    "build:all": "electron-builder --win --mac --linux",
+    "release:win": "electron-builder --win --publish always",
+    "release:mac": "electron-builder --mac --publish always",
+    "release:linux": "electron-builder --linux --publish always"
   },
   "repository": {
     "type": "git",
@@ -18,10 +28,53 @@
     "url": "https://github.com/Ebana27/EkoVision/issues"
   },
   "homepage": "https://github.com/Ebana27/EkoVision#readme",
+  "build": {
+    "appId": "com.ebana.ekovision",
+    "productName": "EkoVision",
+    "copyright": "Copyright © 2026 Plamedi Ebana",
+    "directories": {
+      "output": "dist",
+      "buildResources": "resources"
+    },
+    "files": [
+      "src/**/*",
+      "resources/**/*",
+      "package.json"
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Ebana27",
+        "repo": "EkoVision"
+      }
+    ],
+    "win": {
+      "icon": "resources/icon.png",
+      "target": ["nsis", "portable"]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "EkoVision"
+    },
+    "mac": {
+      "icon": "resources/icon.png",
+      "category": "public.app-category.education",
+      "target": ["dmg", "zip"]
+    },
+    "linux": {
+      "icon": "resources/icon.png",
+      "category": "Education",
+      "target": ["AppImage", "tar.gz"]
+    }
+  },
   "devDependencies": {
-    "electron": "^45.2.3"
+    "electron": "^45.2.3",
+    "electron-builder": "^26.0.12"
   },
   "dependencies": {
+    "electron-updater": "^6.3.9",
     "peer": "^1.0.2",
     "peerjs": "^1.5.5"
   }

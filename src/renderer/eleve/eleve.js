@@ -1,80 +1,177 @@
-(() => {
-  const $ = (id) => document.getElementById(id);
-  const form = $('join-form'); const joinBtn = $('join-btn'); const leaveBtn = $('leave-btn');
-  const status = $('status'); const streamStatus = $('stream-status'); const video = $('screen');
-  let peer; let dataConn; let mediaCall; let connected = false; let pointerThrottle = 0;
-  const studentName = () => `${$('first-name').value.trim()} ${$('last-name').value.trim()}`.trim();
-  function setStatus(el, text, kind = '') { el.className = `status ${kind}`; el.querySelector('span').textContent = text; }
-  function isLanIPv4(value) {
-    const parts = value.split('.'); const octets = parts.map(Number);
-    if (parts.length !== 4 || parts.some((part, i) => !/^\d{1,3}$/.test(part) || octets[i] < 0 || octets[i] > 255)) return false;
-    return octets[0] === 10 || octets[0] === 127 || (octets[0] === 192 && octets[1] === 168) || (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) || (octets[0] === 169 && octets[1] === 254);
+ajouterStyle(`
+.grille{display:grid;grid-template-columns:300px minmax(0,1fr);gap:24px;align-items:start}
+.champ{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
+.champ label{font-size:12px;color:var(--muted)}
+.champ input{height:38px;border:1px solid var(--line);border-radius:6px;padding:0 10px;outline:none}
+.champ input:focus{border-color:var(--green)}
+#formulaire .btn{width:100%;margin-bottom:12px}
+#plein-ecran{position:absolute;top:10px;right:10px;height:32px;padding:0 12px;font-size:12px}
+.fichier{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid var(--line);font-size:13px}
+.fichier span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fichier .btn{height:30px;padding:0 10px;font-size:12px;flex:none}
+@media(max-width:800px){.grille{grid-template-columns:1fr}}
+`);
+
+const TAILLE_MAX = 20 * 1024 * 1024;
+
+const formulaire = document.getElementById('formulaire');
+const champPrenom = document.getElementById('prenom');
+const champNom = document.getElementById('nom');
+const champIp = document.getElementById('ip');
+const boutonRejoindre = document.getElementById('rejoindre');
+const boutonQuitter = document.getElementById('quitter');
+const etat = document.getElementById('etat');
+const ecran = document.getElementById('ecran');
+const video = document.getElementById('video');
+const vide = document.getElementById('vide');
+const boutonPleinEcran = document.getElementById('plein-ecran');
+const listeFichiers = document.getElementById('liste-fichiers');
+const aucunFichier = document.getElementById('aucun-fichier');
+
+let peer = null;
+let connexion = null;
+
+function verrouiller(oui) {
+  champPrenom.disabled = oui;
+  champNom.disabled = oui;
+  champIp.disabled = oui;
+}
+
+function formaterTaille(octets) {
+  if (octets < 1024 * 1024) return Math.max(1, Math.round(octets / 1024)) + ' Ko';
+  return (octets / (1024 * 1024)).toFixed(1) + ' Mo';
+}
+
+function ajouterFichier(message) {
+  const donnees = message.donnees;
+  if (!donnees || donnees.byteLength > TAILLE_MAX) return;
+
+  const nom = String(message.nom).replace(/[\\/:*?"<>|]/g, '_').slice(0, 100);
+  const url = URL.createObjectURL(new Blob([donnees]));
+
+  const ligne = document.createElement('div');
+  ligne.className = 'fichier';
+
+  const texte = document.createElement('span');
+  texte.textContent = nom + ' (' + formaterTaille(donnees.byteLength) + ')';
+
+  const bouton = document.createElement('button');
+  bouton.className = 'btn clair';
+  bouton.type = 'button';
+  bouton.textContent = 'Télécharger';
+  bouton.addEventListener('click', function () {
+    const lien = document.createElement('a');
+    lien.href = url;
+    lien.download = nom;
+    lien.click();
+  });
+
+  ligne.append(texte, bouton);
+  listeFichiers.append(ligne);
+  aucunFichier.hidden = true;
+}
+
+function recevoir(message) {
+  if (message && message.type === 'fichier') ajouterFichier(message);
+}
+
+function afficherFlux(flux) {
+  video.srcObject = flux;
+  vide.hidden = true;
+  boutonPleinEcran.hidden = false;
+  video.play().catch(function () {});
+}
+
+function effacerFlux() {
+  video.srcObject = null;
+  vide.hidden = false;
+  boutonPleinEcran.hidden = true;
+  if (document.fullscreenElement) document.exitFullscreen();
+}
+
+function quitter() {
+  const ancienPeer = peer;
+  peer = null;
+  connexion = null;
+  if (ancienPeer) ancienPeer.destroy();
+  effacerFlux();
+  verrouiller(false);
+  boutonRejoindre.hidden = false;
+  boutonRejoindre.disabled = false;
+  boutonQuitter.hidden = true;
+}
+
+function rejoindre(event) {
+  event.preventDefault();
+
+  const adresse = lireAdresse(champIp.value);
+  if (!adresse) {
+    setEtat(etat, 'Adresse invalide. Exemple : 192.168.1.24 ou 192.168.1.24:9001', 'erreur');
+    return;
   }
-  function colorFor(id) { let h = 0; for (const c of id) h = (h * 31 + c.charCodeAt(0)) | 0; return `hsl(${Math.abs(h) % 360} 88% 66%)`; }
-  function drawPointer(id, info) {
-    const overlay = $('laser-overlay'); let el = document.getElementById(`remote-${CSS.escape(id)}`);
-    if (!el) { el = document.createElement('div'); el.id = `remote-${id}`; el.className = 'laser'; el.style.setProperty('--laser-color', colorFor(id)); const label = document.createElement('span'); label.className = 'laser-label'; el.append(label); overlay.append(el); }
-    el.style.left = `${Math.max(0, Math.min(1, info.x)) * 100}%`; el.style.top = `${Math.max(0, Math.min(1, info.y)) * 100}%`; el.querySelector('.laser-label').textContent = info.name || 'Élève';
-    clearTimeout(el._hideTimer); if (!info.active) el._hideTimer = setTimeout(() => el.remove(), 900);
+  if (typeof Peer === 'undefined') {
+    setEtat(etat, 'PeerJS introuvable : lancez npm install.', 'erreur');
+    return;
   }
-  function handleData(message) {
-    if (!message || typeof message !== 'object') return;
-    if (message.type === 'pointer') drawPointer(message.id, message);
-    if (message.type === 'roster') {
-      const me = dataConn?.peer;
-      for (const student of message.students || []) if (student.id !== me) drawPointer(student.id, { x: 0.015, y: 0.04, active: false, name: student.name });
-    }
-  }
-  function connect(event) {
-    event.preventDefault(); if (!form.reportValidity()) return;
-    const host = $('teacher-host').value.trim();
-    if (!isLanIPv4(host)) { setStatus(status, 'Entrez une adresse IPv4 privée du réseau local.', 'error'); return; }
-    joinBtn.disabled = true; setStatus(status, 'Connexion au réseau local…');
-    try {
-      if (typeof Peer === 'undefined') throw new Error('PeerJS ne se charge pas. Installez les dépendances avec npm install.');
-      peer = new Peer(undefined, { host, port: 9000, path: '/myapp', secure: false, debug: 1, config: { iceServers: [] } });
-      peer.on('open', () => {
-        dataConn = peer.connect('professeur-id', { reliable: true, serialization: 'json' });
-        dataConn.on('open', () => { connected = true; dataConn.send({ type: 'hello', firstName: $('first-name').value.trim(), lastName: $('last-name').value.trim() }); setStatus(status, 'Connecté à la classe', 'online'); joinBtn.hidden = true; leaveBtn.hidden = false; $('first-name').disabled = true; $('last-name').disabled = true; $('teacher-host').disabled = true; });
-        dataConn.on('data', handleData); dataConn.on('close', () => { if (connected) { setStatus(status, 'Connexion interrompue', 'error'); disconnect(false); } });
-        dataConn.on('error', (err) => setStatus(status, `Erreur de connexion : ${err.type || err.message}`, 'error'));
-      });
-      peer.on('call', (call) => { mediaCall = call; call.on('stream', (stream) => { video.srcObject = stream; $('placeholder').hidden = true; setStatus(streamStatus, 'Flux reçu', 'online'); video.play().catch(() => {}); }); call.on('close', () => { video.srcObject = null; $('placeholder').hidden = false; setStatus(streamStatus, 'Flux interrompu'); }); call.answer(); });
-      peer.on('error', (err) => { setStatus(status, err.type === 'peer-unavailable' ? 'Professeur introuvable. Vérifiez son IP et son partage.' : `Erreur réseau : ${err.type || err.message}`, 'error'); joinBtn.disabled = false; });
-      peer.on('disconnected', () => setStatus(status, 'Signalisation interrompue', 'error'));
-    } catch (error) { setStatus(status, error.message, 'error'); joinBtn.disabled = false; }
-  }
-  function normalizedPoint(event) {
-    const rect = video.getBoundingClientRect();
-    const vw = video.videoWidth || rect.width; const vh = video.videoHeight || rect.height;
-    if (!vw || !vh || !rect.width || !rect.height) return null;
-    const scale = Math.min(rect.width / vw, rect.height / vh);
-    const width = vw * scale; const height = vh * scale;
-    const left = rect.left + (rect.width - width) / 2; const top = rect.top + (rect.height - height) / 2;
-    const x = (event.clientX - left) / width; const y = (event.clientY - top) / height;
-    if (x < 0 || x > 1 || y < 0 || y > 1) return null;
-    return { x, y };
-  }
-  function sendPointer(event, active = true) {
-    if (!dataConn?.open) return;
-    const now = performance.now(); if (active && now - pointerThrottle < 35) return; pointerThrottle = now;
-    const point = active ? normalizedPoint(event) : { x: 0, y: 0 };
-    dataConn.send({ type: 'pointer', active: !!point && active, x: point?.x ?? 0, y: point?.y ?? 0 });
-  }
-  function disconnect(update = true) {
-    connected = false;
-    if (mediaCall) { try { mediaCall.close(); } catch (_) {} mediaCall = null; }
-    if (dataConn) { try { dataConn.close(); } catch (_) {} dataConn = null; }
-    if (peer) { try { peer.destroy(); } catch (_) {} peer = null; }
-    video.srcObject = null; $('placeholder').hidden = false; $('laser-overlay').replaceChildren();
-    setStatus(streamStatus, 'En attente de connexion'); $('first-name').disabled = false; $('last-name').disabled = false; $('teacher-host').disabled = false;
-    joinBtn.hidden = false; joinBtn.disabled = false; leaveBtn.hidden = true;
-    if (update) setStatus(status, 'Déconnecté');
-  }
-  form.addEventListener('submit', connect); leaveBtn.addEventListener('click', () => disconnect());
-  const wrap = $('video-wrap');
-  wrap.addEventListener('pointermove', (event) => { const p = normalizedPoint(event); if (p) drawPointer('mine', { ...p, name: studentName(), active: true }); sendPointer(event, true); });
-  wrap.addEventListener('pointerleave', (event) => { document.getElementById('remote-mine')?.remove(); sendPointer(event, false); });
-  $('display-name').textContent = '—'; $('first-name').addEventListener('input', () => { $('display-name').textContent = studentName() || '—'; }); $('last-name').addEventListener('input', () => { $('display-name').textContent = studentName() || '—'; });
-  window.addEventListener('beforeunload', () => disconnect(false));
-})();
+
+  boutonRejoindre.disabled = true;
+  setEtat(etat, 'Connexion…', '');
+
+  peer = new Peer(undefined, {
+    host: adresse.ip,
+    port: adresse.port,
+    path: '/myapp',
+    secure: false,
+    config: { iceServers: [] }
+  });
+
+  peer.on('open', function () {
+    connexion = peer.connect('professeur-id', { reliable: true });
+
+    connexion.on('open', function () {
+      connexion.send({ type: 'hello', prenom: champPrenom.value.trim(), nom: champNom.value.trim() });
+      setEtat(etat, 'Connecté à la classe', 'ok');
+      boutonRejoindre.hidden = true;
+      boutonQuitter.hidden = false;
+      verrouiller(true);
+    });
+
+    connexion.on('data', recevoir);
+
+    connexion.on('close', function () {
+      if (peer) {
+        quitter();
+        setEtat(etat, 'Connexion interrompue', 'erreur');
+      }
+    });
+  });
+
+  peer.on('call', function (appel) {
+    appel.answer();
+    appel.on('stream', afficherFlux);
+    appel.on('close', effacerFlux);
+  });
+
+  peer.on('error', function (erreur) {
+    const texte = erreur.type === 'peer-unavailable'
+      ? 'Professeur introuvable. Vérifiez l’adresse IP.'
+      : 'Erreur réseau : ' + erreur.type;
+    quitter();
+    setEtat(etat, texte, 'erreur');
+  });
+}
+
+function pleinEcran() {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else ecran.requestFullscreen();
+}
+
+formulaire.addEventListener('submit', rejoindre);
+boutonQuitter.addEventListener('click', function () {
+  quitter();
+  setEtat(etat, 'Déconnecté', '');
+});
+boutonPleinEcran.addEventListener('click', pleinEcran);
+window.addEventListener('beforeunload', function () {
+  if (peer) peer.destroy();
+});

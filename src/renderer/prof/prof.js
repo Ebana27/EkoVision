@@ -1,96 +1,191 @@
-(() => {
-  const $ = (id) => document.getElementById(id);
-  const startBtn = $('start-btn'); const stopBtn = $('stop-btn');
-  const status = $('status'); const streamStatus = $('stream-status');
-  const preview = $('preview'); const placeholder = $('placeholder');
-  const peers = new Map(); const students = new Map(); const pointers = new Map();
-  let peer; let localStream; let running = false;
+ajouterStyle(`
+.barre{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px;margin-bottom:20px}
+.champ-ip{display:flex;flex-direction:column;gap:4px}
+.champ-ip label{font-size:12px;color:var(--muted)}
+.champ-ip input{height:40px;width:260px;border:1px solid var(--line);border-radius:6px;padding:0 10px;outline:none}
+.champ-ip input:focus{border-color:var(--green)}
+.barre .etat{height:40px;margin-left:auto}
+.grille{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:20px;align-items:start}
+.ligne-eleve{padding:8px 0;border-top:1px solid var(--line);font-size:13px}
+input[type=file]{width:100%;margin-bottom:12px;font-size:12px}
+#envoyer{width:100%;margin-bottom:12px}
+@media(max-width:800px){.grille{grid-template-columns:1fr}.barre .etat{margin-left:0}}
+`);
 
-  function setStatus(el, text, kind = '') { el.className = `status ${kind}`; el.querySelector('span').textContent = text; }
-  function isLanIPv4(value) {
-    const octets = value.split('.').map(Number);
-    if (octets.length !== 4 || octets.some((part, i) => !/^\d{1,3}$/.test(value.split('.')[i]) || part < 0 || part > 255)) return false;
-    return octets[0] === 10 || octets[0] === 127 || (octets[0] === 192 && octets[1] === 168) || (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) || (octets[0] === 169 && octets[1] === 254);
-  }
-  function makePeer(host) {
-    if (typeof Peer === 'undefined') throw new Error('PeerJS ne se charge pas. Installez les dépendances avec npm install.');
-    return new Peer('professeur-id', { host, port: 9000, path: '/myapp', secure: false, debug: 1, config: { iceServers: [] } });
-  }
-  function colorFor(id) { let h = 0; for (const c of id) h = (h * 31 + c.charCodeAt(0)) | 0; return `hsl(${Math.abs(h) % 360} 88% 66%)`; }
+const TAILLE_MAX = 20 * 1024 * 1024;
 
-  function renderStudents() {
-    const list = $('student-list'); list.replaceChildren();
-    if (!students.size) { const empty = document.createElement('span'); empty.className = 'empty-video'; empty.textContent = 'Aucun élève pour le moment'; list.append(empty); return; }
-    for (const [id, info] of students) {
-      const chip = document.createElement('span'); chip.className = 'student-chip'; chip.textContent = info.name || `Élève ${id.slice(-4)}`; list.append(chip);
+const champIp = document.getElementById('ip');
+const boutonDemarrer = document.getElementById('demarrer');
+const boutonArreter = document.getElementById('arreter');
+const etat = document.getElementById('etat');
+const apercu = document.getElementById('apercu');
+const vide = document.getElementById('vide');
+const listeEleves = document.getElementById('liste-eleves');
+const nombre = document.getElementById('nombre');
+const champFichier = document.getElementById('fichier');
+const boutonEnvoyer = document.getElementById('envoyer');
+const etatFichier = document.getElementById('etat-fichier');
+
+let peer = null;
+let flux = null;
+let port = null;
+const connexions = {};
+const eleves = {};
+
+function afficherEleves() {
+  listeEleves.replaceChildren();
+  const ids = Object.keys(eleves);
+  nombre.textContent = ids.length;
+  if (ids.length === 0) {
+    const p = document.createElement('p');
+    p.className = 'aucun';
+    p.textContent = 'Aucun élève pour le moment';
+    listeEleves.append(p);
+    return;
+  }
+  for (const id of ids) {
+    const ligne = document.createElement('div');
+    ligne.className = 'ligne-eleve';
+    ligne.textContent = eleves[id];
+    listeEleves.append(ligne);
+  }
+}
+
+function envoyerATous(message) {
+  for (const id in connexions) {
+    if (connexions[id].open) connexions[id].send(message);
+  }
+}
+
+function recevoirConnexion(conn) {
+  connexions[conn.peer] = conn;
+
+  conn.on('data', function (message) {
+    if (message && message.type === 'hello') {
+      const nomComplet = (String(message.prenom || '') + ' ' + String(message.nom || '')).trim();
+      eleves[conn.peer] = nomComplet || 'Élève';
+      afficherEleves();
+      if (flux) peer.call(conn.peer, flux);
     }
+  });
+
+  conn.on('close', function () {
+    delete connexions[conn.peer];
+    delete eleves[conn.peer];
+    afficherEleves();
+  });
+}
+
+async function demarrer() {
+  const ip = champIp.value.trim();
+  if (!ipLocaleValide(ip)) {
+    setEtat(etat, 'Entrez une adresse IP locale valide.', 'erreur');
+    return;
   }
-  function drawPointer(id, info) {
-    let el = pointers.get(id);
-    if (!el) {
-      el = document.createElement('div'); el.className = 'laser'; el.style.setProperty('--laser-color', colorFor(id));
-      const label = document.createElement('span'); label.className = 'laser-label'; el.append(label);
-      $('laser-overlay').append(el); pointers.set(id, el);
-    }
-    el.style.left = `${Math.max(0, Math.min(1, info.x)) * 100}%`;
-    el.style.top = `${Math.max(0, Math.min(1, info.y)) * 100}%`;
-    el.querySelector('.laser-label').textContent = info.name || 'Élève';
-    el.hidden = false;
-    clearTimeout(el._hideTimer);
-    if (!info.active) el._hideTimer = setTimeout(() => { el.hidden = true; }, 800);
+  if (typeof Peer === 'undefined') {
+    setEtat(etat, 'PeerJS introuvable : lancez npm install.', 'erreur');
+    return;
   }
-  function relay(message, exceptId) {
-    for (const [id, conn] of peers) if (id !== exceptId && conn.open) { try { conn.send(message); } catch (_) {} }
-  }
-  function handleConnection(conn) {
-    peers.set(conn.peer, conn);
-    conn.on('data', (message) => {
-      if (!message || typeof message !== 'object') return;
-      if (message.type === 'hello') {
-        const student = { name: `${String(message.firstName || '').trim()} ${String(message.lastName || '').trim()}`.trim() || 'Élève' };
-        students.set(conn.peer, student); renderStudents();
-        if (localStream) { try { peer.call(conn.peer, localStream, { metadata: { name: 'EkoVision' } }); } catch (e) { console.error(e); } }
-        relay({ type: 'roster', students: [...students].map(([id, s]) => ({ id, name: s.name })) });
-      } else if (message.type === 'pointer') {
-        const info = { x: Number(message.x), y: Number(message.y), active: !!message.active, name: students.get(conn.peer)?.name || 'Élève' };
-        if (Number.isFinite(info.x) && Number.isFinite(info.y)) { drawPointer(conn.peer, info); relay({ type: 'pointer', id: conn.peer, ...info }, conn.peer); }
+
+  boutonDemarrer.disabled = true;
+  setEtat(etat, 'Préparation de la capture…', '');
+
+  try {
+    port = await window.ekoVision.getSignalPort();
+    if (!port) throw new Error('Aucun port libre trouvé (9000 à 9019).');
+    const sources = await window.ekoVision.getScreenSources();
+    if (sources.length === 0) throw new Error('Aucun écran détecté.');
+    flux = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: {
+        mandatory: {
+          chromeMediaSource: 'desktop',
+          chromeMediaSourceId: sources[0].id,
+          maxFrameRate: 30
+        }
       }
     });
-    conn.on('close', () => {
-      peers.delete(conn.peer); students.delete(conn.peer);
-      pointers.get(conn.peer)?.remove(); pointers.delete(conn.peer); renderStudents();
-      relay({ type: 'roster', students: [...students].map(([id, s]) => ({ id, name: s.name })) });
-    });
-    conn.on('error', (e) => console.error('Connexion élève :', e));
+  } catch (erreur) {
+    setEtat(etat, erreur.message || 'Impossible de démarrer le partage.', 'erreur');
+    boutonDemarrer.disabled = false;
+    return;
   }
-  async function start() {
-    const ip = $('teacher-ip').value.trim();
-    if (!isLanIPv4(ip)) { setStatus(status, 'Saisissez une adresse IPv4 privée du réseau local.', 'error'); return; }
-    startBtn.disabled = true; setStatus(status, 'Préparation de la capture…');
-    try {
-      const sources = await window.ekoVision.getScreenSources();
-      if (!sources.length) throw new Error('Aucun écran détecté.');
-      const source = sources[0];
-      localStream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: source.id, maxFrameRate: 30 } } });
-      preview.srcObject = localStream; placeholder.hidden = true; setStatus(streamStatus, `Diffusion active — ${source.name}`, 'online');
-      peer = makePeer(ip);
-      peer.on('open', () => { running = true; setStatus(status, `Prêt — adresse à communiquer : ${ip}:9000`, 'online'); stopBtn.disabled = false; });
-      peer.on('connection', handleConnection);
-      peer.on('call', (call) => { call.answer(localStream); });
-      peer.on('error', (err) => { console.error(err); stopLocal(); setStatus(status, `Erreur PeerJS : ${err.type || err.message}`, 'error'); });
-      localStream.getVideoTracks()[0].addEventListener('ended', stop);
-    } catch (error) { console.error(error); setStatus(status, error.message || 'Impossible de démarrer le partage.', 'error'); stopLocal(); startBtn.disabled = false; }
+
+  apercu.srcObject = flux;
+  vide.hidden = true;
+  flux.getVideoTracks()[0].addEventListener('ended', arreter);
+
+  peer = new Peer('professeur-id', {
+    host: ip,
+    port: port,
+    path: '/myapp',
+    secure: false,
+    config: { iceServers: [] }
+  });
+
+  peer.on('open', function () {
+    setEtat(etat, 'Partage actif — donnez cette adresse aux élèves : ' + ip + ':' + port, 'ok');
+    boutonArreter.disabled = false;
+  });
+
+  peer.on('connection', recevoirConnexion);
+
+  peer.on('error', function (erreur) {
+    arreter();
+    setEtat(etat, 'Erreur réseau : ' + erreur.type, 'erreur');
+  });
+}
+
+function arreter() {
+  for (const id in connexions) connexions[id].close();
+  for (const id in connexions) delete connexions[id];
+  for (const id in eleves) delete eleves[id];
+  afficherEleves();
+
+  if (peer) {
+    peer.destroy();
+    peer = null;
   }
-  function stopLocal() {
-    running = false;
-    for (const conn of peers.values()) { try { conn.close(); } catch (_) {} }
-    peers.clear(); students.clear(); pointers.clear(); $('laser-overlay').replaceChildren(); renderStudents();
-    if (peer) { try { peer.destroy(); } catch (_) {} peer = null; }
-    if (localStream) { localStream.getTracks().forEach((t) => t.stop()); localStream = null; }
-    preview.srcObject = null; placeholder.hidden = false;
-    setStatus(streamStatus, 'Pas de diffusion'); startBtn.disabled = false; stopBtn.disabled = true;
+  if (flux) {
+    flux.getTracks().forEach(function (piste) { piste.stop(); });
+    flux = null;
   }
-  function stop() { stopLocal(); setStatus(status, 'Diffusion arrêtée'); }
-  startBtn.addEventListener('click', start); stopBtn.addEventListener('click', stop);
-  window.addEventListener('beforeunload', stopLocal);
-})();
+
+  apercu.srcObject = null;
+  vide.hidden = false;
+  boutonDemarrer.disabled = false;
+  boutonArreter.disabled = true;
+  setEtat(etat, 'Partage arrêté', '');
+}
+
+async function envoyerFichier() {
+  const fichier = champFichier.files[0];
+  if (!fichier) {
+    setEtat(etatFichier, 'Choisissez un fichier.', 'erreur');
+    return;
+  }
+  if (fichier.size > TAILLE_MAX) {
+    setEtat(etatFichier, 'Fichier trop lourd (maximum 20 Mo).', 'erreur');
+    return;
+  }
+  const nombreEleves = Object.keys(connexions).length;
+  if (!peer || nombreEleves === 0) {
+    setEtat(etatFichier, 'Aucun élève connecté.', 'erreur');
+    return;
+  }
+
+  boutonEnvoyer.disabled = true;
+  setEtat(etatFichier, 'Envoi en cours…', '');
+  const donnees = await fichier.arrayBuffer();
+  envoyerATous({ type: 'fichier', nom: fichier.name, donnees: donnees });
+  setEtat(etatFichier, 'Envoyé à ' + nombreEleves + ' élève(s).', 'ok');
+  champFichier.value = '';
+  boutonEnvoyer.disabled = false;
+}
+
+boutonDemarrer.addEventListener('click', demarrer);
+boutonArreter.addEventListener('click', arreter);
+boutonEnvoyer.addEventListener('click', envoyerFichier);
+window.addEventListener('beforeunload', function () {
+  if (peer) peer.destroy();
+});
