@@ -6,7 +6,7 @@
   "main": "./src/main/main.js",
   "scripts": {
     "start": "electron .",
-    "test": "node --check src/main/main.js && node --check src/preload/preload.js && node --check src/renderer/outils.js && node --check src/renderer/splash.js && node --check src/renderer/prof/prof.js && node --check src/renderer/eleve/eleve.js",
+    "test": "node --check src/main/main.js && node --check src/preload/preload.js && node --check src/renderer/outils.js && node --check src/renderer/splash.js && node --check src/renderer/prof/prof.js && node --check src/renderer/eleve/eleve.js && node --check src/renderer/web/web.js",
     "pack": "electron-builder --dir",
     "build": "electron-builder",
     "build:win": "electron-builder --win",

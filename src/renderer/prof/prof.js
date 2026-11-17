@@ -9,6 +9,7 @@ ajouterStyle(`
 .ligne-eleve{padding:8px 0;border-top:1px solid var(--line);font-size:13px}
 input[type=file]{width:100%;margin-bottom:12px;font-size:12px}
 #envoyer{width:100%;margin-bottom:12px}
+.adresse-web{margin:8px 0 0;font-weight:600;word-break:break-all;user-select:all}
 @media(max-width:800px){.grille{grid-template-columns:1fr}.barre .etat{margin-left:0}}
 `);
 
@@ -25,10 +26,12 @@ const nombre = document.getElementById('nombre');
 const champFichier = document.getElementById('fichier');
 const boutonEnvoyer = document.getElementById('envoyer');
 const etatFichier = document.getElementById('etat-fichier');
+const adresseWeb = document.getElementById('adresse-web');
 
 let peer = null;
 let flux = null;
 let port = null;
+let portWeb = null;
 const connexions = {};
 const eleves = {};
 
@@ -93,6 +96,7 @@ async function demarrer() {
   try {
     port = await window.ekoVision.getSignalPort();
     if (!port) throw new Error('Aucun port libre trouvé (9000 à 9019).');
+    portWeb = await window.ekoVision.getWebPort();
     const sources = await window.ekoVision.getScreenSources();
     if (sources.length === 0) throw new Error('Aucun écran détecté.');
     flux = await navigator.mediaDevices.getUserMedia({
@@ -125,6 +129,7 @@ async function demarrer() {
 
   peer.on('open', function () {
     setEtat(etat, 'Partage actif — donnez cette adresse aux élèves : ' + ip + ':' + port, 'ok');
+    adresseWeb.textContent = portWeb ? 'http://' + ip + ':' + portWeb : 'Indisponible';
     boutonArreter.disabled = false;
   });
 
@@ -155,6 +160,7 @@ function arreter() {
   vide.hidden = false;
   boutonDemarrer.disabled = false;
   boutonArreter.disabled = true;
+  adresseWeb.textContent = '—';
   setEtat(etat, 'Partage arrêté', '');
 }
 

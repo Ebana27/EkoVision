@@ -2,19 +2,43 @@ const { app, BrowserWindow, desktopCapturer, dialog, ipcMain, shell } = require(
 const { autoUpdater } = require('electron-updater');
 const path = require('node:path');
 const net = require('node:net');
+const http = require('node:http');
+const fs = require('node:fs');
 const { PeerServer } = require('peer');
 
-const PORT_DEPART = 9000;
+const PORT_SIGNAL_DEPART = 9000;
+const PORT_WEB_DEPART = 8000;
 const NOMBRE_ESSAIS = 20;
 const SIGNAL_PATH = '/myapp';
-const DUREE_SPLASH = 1800;
+const DUREE_SPLASH = 3500;
 const ICONE = path.join(__dirname, '../../resources/icon.png');
+const RACINE = path.join(__dirname, '../..');
+
+const TYPES = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.png': 'image/png'
+};
+
+const PAGES_WEB = {
+  '/': 'src/renderer/web/index.html',
+  '/web.js': 'src/renderer/web/web.js',
+  '/main.css': 'src/renderer/main.css',
+  '/outils.js': 'src/renderer/outils.js',
+  '/logo.png': 'src/renderer/assets/ekovision-logo.png',
+  '/peerjs.min.js': 'node_modules/peerjs/dist/peerjs.min.js'
+};
+
+app.commandLine.appendSwitch('disable-features', 'WebRtcHideLocalIpsWithMdns');
 
 let mainWindow = null;
 let splash = null;
 let debutSplash = 0;
 let serveurPeer = null;
+let serveurWeb = null;
 let portSignal = null;
+let portWeb = null;
 
 function portEstLibre(port) {
   return new Promise(function (resolve) {
@@ -31,12 +55,49 @@ function portEstLibre(port) {
   });
 }
 
-async function trouverPortLibre() {
+async function trouverPortLibre(depart) {
   for (let i = 0; i < NOMBRE_ESSAIS; i++) {
-    const port = PORT_DEPART + i;
+    const port = depart + i;
     if (await portEstLibre(port)) return port;
   }
   return null;
+}
+
+function demarrerServeurWeb(port) {
+  serveurWeb = http.createServer(function (requete, reponse) {
+    const adresse = requete.url.split('?')[0];
+
+    if (adresse === '/config.json') {
+      reponse.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      reponse.end(JSON.stringify({ signalPort: portSignal }));
+      return;
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(PAGES_WEB, adresse)) {
+      reponse.writeHead(404);
+      reponse.end('Page introuvable');
+      return;
+    }
+
+    const fichier = PAGES_WEB[adresse];
+    fs.readFile(path.join(RACINE, fichier), function (erreur, contenu) {
+      if (erreur) {
+        reponse.writeHead(500);
+        reponse.end('Erreur du serveur');
+        return;
+      }
+      reponse.writeHead(200, { 'Content-Type': TYPES[path.extname(fichier)] });
+      reponse.end(contenu);
+    });
+  });
+
+  serveurWeb.on('error', function (erreur) {
+    console.error('Serveur web impossible :', erreur.message);
+    portWeb = null;
+  });
+
+  serveurWeb.listen(port, '0.0.0.0');
+  console.log('Page web des élèves prête sur le port ' + port);
 }
 
 function creerSplash() {
@@ -145,13 +206,17 @@ ipcMain.handle('ekovision:get-signal-port', function () {
   return portSignal;
 });
 
+ipcMain.handle('ekovision:get-web-port', function () {
+  return portWeb;
+});
+
 app.whenReady().then(async function () {
   creerSplash();
 
-  portSignal = await trouverPortLibre();
+  portSignal = await trouverPortLibre(PORT_SIGNAL_DEPART);
 
   if (portSignal === null) {
-    console.error('Aucun port libre entre ' + PORT_DEPART + ' et ' + (PORT_DEPART + NOMBRE_ESSAIS - 1));
+    console.error('Aucun port libre entre ' + PORT_SIGNAL_DEPART + ' et ' + (PORT_SIGNAL_DEPART + NOMBRE_ESSAIS - 1));
   } else {
     try {
       serveurPeer = PeerServer({
@@ -167,6 +232,14 @@ app.whenReady().then(async function () {
     }
   }
 
+  portWeb = await trouverPortLibre(PORT_WEB_DEPART);
+
+  if (portWeb === null) {
+    console.error('Aucun port libre entre ' + PORT_WEB_DEPART + ' et ' + (PORT_WEB_DEPART + NOMBRE_ESSAIS - 1));
+  } else {
+    demarrerServeurWeb(portWeb);
+  }
+
   createWindow();
   verifierMisesAJour();
 
@@ -179,6 +252,11 @@ app.on('window-all-closed', function () {
   if (serveurPeer) {
     try {
       serveurPeer.close();
+    } catch (erreur) {}
+  }
+  if (serveurWeb) {
+    try {
+      serveurWeb.close();
     } catch (erreur) {}
   }
   if (process.platform !== 'darwin') app.quit();

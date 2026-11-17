@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EkoVision — Rejoindre la classe</title>
+  <link rel="stylesheet" href="/main.css">
+</head>
+<body>
+  <main class="page">
+    <header class="header">
+      <img src="/logo.png" alt="">
+      <strong>EKOVISION</strong>
+      <span class="mode">Élève</span>
+    </header>
+
+    <h1>Rejoindre la classe</h1>
+
+    <form class="carte" id="formulaire">
+      <h2>Vos informations</h2>
+      <div class="champ">
+        <label for="prenom">Prénom</label>
+        <input id="prenom" placeholder="Ex. Amina" required maxlength="40" autocomplete="given-name">
+      </div>
+      <div class="champ">
+        <label for="nom">Nom</label>
+        <input id="nom" placeholder="Ex. Diallo" required maxlength="40" autocomplete="family-name">
+      </div>
+      <button class="btn" id="rejoindre" type="submit">Rejoindre</button>
+      <button class="btn clair" id="quitter" type="button" hidden>Se déconnecter</button>
+      <div class="etat" id="etat"><i></i><span>Non connecté</span></div>
+    </form>
+
+    <div class="ecran" id="ecran">
+      <video id="video" autoplay muted playsinline></video>
+      <p class="vide" id="vide">Le partage du professeur apparaîtra ici</p>
+      <button class="btn clair" id="plein-ecran" type="button" hidden>Plein écran</button>
+    </div>
+
+    <div class="carte">
+      <h2>Fichiers reçus</h2>
+      <p class="aucun" id="aucun-fichier">Aucun fichier pour le moment</p>
+      <div id="liste-fichiers"></div>
+    </div>
+  </main>
+  <script src="/peerjs.min.js"></script>
+  <script src="/outils.js"></script>
+  <script src="/web.js"></script>
+</body>
+</html>
